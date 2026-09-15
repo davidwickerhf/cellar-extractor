@@ -147,10 +147,11 @@ def test_public_manifestation_and_fulltext_api(monkeypatch):
     )
 
     works, found = cell.get_cellar_manifestations_by_celex(
-        "62024CJ0001", sector="6"
+        "62024CJ0001_SUM;62024CJ0001", sector="6"
     )
     assert works == ["http://cellar/6/62024CJ0001"]
     assert found == manifestations
+    assert cell.normalize_celex("62024CJ0001_SUM;62024CJ0001") == "62024CJ0001"
 
     monkeypatch.setattr(
         es,

@@ -129,6 +129,17 @@ def _normalize_celex(celex):
     return value
 
 
+def normalize_celex(celex):
+    """Return the canonical work CELEX used for full-text retrieval.
+
+    CELLAR metadata can bundle a primary document with derived information,
+    summary, and résumé works (for example ``62020CJ0414_SUM;62020CJ0414``).
+    Full-text callers must resolve the unsuffixed base work so a derived work
+    can never occupy the judgment's language slot.
+    """
+    return _normalize_celex(celex)
+
+
 def _sleep_with_backoff(attempt, base=0.2):
     time.sleep(base * (attempt + 1) + random.uniform(0.0, 0.1))
 
@@ -426,7 +437,10 @@ def get_cellar_manifestations_by_celex(celex, sector="8"):
     on that triple.  ``sector`` defaults to ``"8"`` and may be set to ``"6"``
     for CJEU documents.
     """
-    return _fetch_sector8_items_for_celex(celex, sector=sector)
+    canonical_celex = normalize_celex(celex)
+    if not canonical_celex:
+        return [], []
+    return _fetch_sector8_items_for_celex(canonical_celex, sector=sector)
 
 
 def _fetch_sector8_work_uri(celex, sector="8"):
@@ -1131,15 +1145,14 @@ def _get_case_data_sector6(celex, language="EN"):
             }
         )
 
-    # Supplement InfoCuria fulltexts with any languages CELLAR has that
-    # InfoCuria didn't expose. InfoCuria's documents.searchHits typically
-    # carries only the procedural language plus EN; CELLAR's CDM model
-    # exposes all 23 EU-official manifestations via expression_uses_language.
-    # We keep InfoCuria's entries where languages overlap (the court's own
-    # publication is typically higher fidelity) and append CELLAR-sourced
-    # entries for any missing languages. Metadata fields (judge, advocate,
-    # directory_codes, etc.) remain InfoCuria-sourced — CELLAR cannot
-    # populate them.
+    # Merge InfoCuria fulltexts with every language CELLAR has. CELLAR is
+    # authoritative when both sources expose the same language because its
+    # manifestation belongs to the canonical CELEX work. InfoCuria's
+    # procedure search has returned a different document under the judgment
+    # slot in production (AG opinions, procedural orders, and notices), so an
+    # existing InfoCuria language must not block the canonical manifestation.
+    # Metadata fields (judge, advocate, directory_codes, etc.) remain
+    # InfoCuria-sourced — CELLAR cannot populate them.
     #
     # All-in-one try/except: a CELLAR-side failure must never kill the
     # InfoCuria-sourced row we already built.
@@ -1149,17 +1162,35 @@ def _get_case_data_sector6(celex, language="EN"):
             cellar_fulltexts = _fanout_fulltexts_from_candidates(
                 cellar_candidates, source_label="CELLAR_ITEM"
             )
+            by_language = {
+                entry.get("text_language", "").upper(): entry
+                for entry in fulltexts
+                if entry.get("text_language", "")
+            }
             for entry in cellar_fulltexts:
                 entry_lang = entry.get("text_language", "").upper()
-                if not entry_lang or entry_lang in seen_langs:
+                if not entry_lang:
                     continue
                 seen_langs.add(entry_lang)
-                fulltexts.append(entry)
+                by_language[entry_lang] = entry
+            fulltexts = list(by_language.values())
     except Exception:
         # CELLAR supplementation is best-effort. If anything goes wrong
         # (SPARQL timeout, network hiccup, schema drift on the manifestation
         # graph) the InfoCuria-only result is still returned.
         pass
+
+    primary = next(
+        (
+            entry
+            for entry in fulltexts
+            if entry.get("text_language", "").upper() == str(language).upper()
+        ),
+        None,
+    )
+    if primary is not None:
+        text = primary.get("text", "")
+        html = primary.get("html", "")
 
     return {
         "html": html,
@@ -1173,9 +1204,9 @@ def _get_case_data_sector6(celex, language="EN"):
         "affecting_ids": affecting_ids,
         "affecting_string": affecting_string,
         "citations_extra": citations_extra,
-        "text_source": "INFOCURIA_BLOB_HTML" if text != "" else "",
-        "text_language": str(doc_lang).upper() if doc_lang else language.upper(),
-        "text_format": "html" if text != "" else "",
+        "text_source": primary.get("text_source", "") if primary else "",
+        "text_language": primary.get("text_language", "") if primary else "",
+        "text_format": primary.get("text_format", "") if primary else "",
         "summary_source": summary_source,
         "summary_language": "EN" if summary != "" else "",
         "sector": "6",

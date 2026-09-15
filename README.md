@@ -92,6 +92,11 @@ df = cell.get_cellar(
 
 Returns a dataframe with base metadata such as CELEX, ECLI, type, dates, and subject-matter-related fields.
 
+For direct manifestation access, use
+`get_cellar_manifestations_by_celex()`. It canonicalizes composite and
+`_SUM`/`_RES`/`_INF` identifiers to the base work before querying, preventing
+derived summaries or notices from being returned as judgment full text.
+
 You can also save explicitly to a custom path instead of the default `data/` location:
 
 ```python

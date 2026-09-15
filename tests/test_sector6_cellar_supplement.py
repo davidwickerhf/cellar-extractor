@@ -7,8 +7,8 @@ languages for the same work.
 
 After this change, sector 6 always supplements InfoCuria's fulltexts with
 CELLAR's manifestation graph (unconditionally — not env-var gated), so the
-``fulltexts`` list contains every language CELLAR has, with InfoCuria's
-entries kept verbatim where both sources have the same language.
+``fulltexts`` list contains every language CELLAR has, with canonical CELLAR
+manifestations replacing InfoCuria entries where both sources overlap.
 """
 
 from __future__ import annotations
@@ -154,9 +154,8 @@ def test_infocuria_success_is_supplemented_with_cellar_languages(monkeypatch):
     assert langs == {"EN", "FR", "DE", "IT", "NL", "ES", "PT"}
 
 
-def test_infocuria_entries_are_preserved_when_languages_overlap(monkeypatch):
-    """When both sources have the same language, keep InfoCuria's entry —
-    it's the court's own publication and typically has higher fidelity."""
+def test_cellar_entries_replace_infocuria_when_languages_overlap(monkeypatch):
+    """Canonical CELLAR works win overlaps to prevent wrong-doc captures."""
     eurlex_scraping._get_case_data_cached.cache_clear()
     _patch_infocuria(monkeypatch, doc_langs=["EN", "FR"])
     _patch_cellar(monkeypatch, languages=["EN", "FR", "DE"])
@@ -164,14 +163,11 @@ def test_infocuria_entries_are_preserved_when_languages_overlap(monkeypatch):
     data = eurlex_scraping._get_case_data_sector6("62024CJ0001", language="EN")
 
     by_lang = {entry["text_language"]: entry for entry in data["fulltexts"]}
-    # The EN + FR entries should still be from InfoCuria.
-    assert by_lang["EN"]["text_source"] == "INFOCURIA_BLOB_HTML"
-    assert "infocuria body in EN" in by_lang["EN"]["text"]
-    assert by_lang["FR"]["text_source"] == "INFOCURIA_BLOB_HTML"
-    assert "infocuria body in FR" in by_lang["FR"]["text"]
-    # DE only existed in CELLAR — comes through with CELLAR_ITEM source.
-    assert by_lang["DE"]["text_source"] == "CELLAR_ITEM"
-    assert "cellar body" in by_lang["DE"]["text"]
+    for language in ("EN", "FR", "DE"):
+        assert by_lang[language]["text_source"] == "CELLAR_ITEM"
+        assert "cellar body" in by_lang[language]["text"]
+    assert data["text_source"] == "CELLAR_ITEM"
+    assert "cellar body" in data["text"]
 
 
 def test_metadata_fields_remain_from_infocuria_even_when_cellar_supplements(monkeypatch):
@@ -250,9 +246,8 @@ def test_metadata_fields_remain_from_infocuria_even_when_cellar_supplements(monk
     assert "Environment" in data["keywords"]
 
 
-def test_supplementation_is_noop_when_cellar_has_nothing_extra(monkeypatch):
-    """If CELLAR returns no new languages, the fulltexts list is unchanged
-    and the metadata is untouched. Belt-and-braces idempotency."""
+def test_cellar_replaces_all_overlapping_languages(monkeypatch):
+    """Even exact language overlap is replaced by the canonical work."""
     eurlex_scraping._get_case_data_cached.cache_clear()
     _patch_infocuria(monkeypatch, doc_langs=["EN", "FR", "DE"])
     _patch_cellar(monkeypatch, languages=["EN", "FR", "DE"])  # exact overlap
@@ -261,9 +256,8 @@ def test_supplementation_is_noop_when_cellar_has_nothing_extra(monkeypatch):
 
     langs = sorted(entry["text_language"] for entry in data["fulltexts"])
     assert langs == ["DE", "EN", "FR"]
-    # No CELLAR_ITEM entries — every language already had an InfoCuria source.
     sources = {entry["text_source"] for entry in data["fulltexts"]}
-    assert sources == {"INFOCURIA_BLOB_HTML"}
+    assert sources == {"CELLAR_ITEM"}
 
 
 def test_supplementation_skips_when_cellar_work_uri_unresolvable(monkeypatch):

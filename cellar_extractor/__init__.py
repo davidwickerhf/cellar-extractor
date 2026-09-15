@@ -11,6 +11,7 @@ from cellar_extractor.cellar import filter_subject_matter
 from cellar_extractor.eurlex_scraping import get_legislation_by_celex_id
 from cellar_extractor.eurlex_scraping import get_cellar_manifestations_by_celex
 from cellar_extractor.eurlex_scraping import extract_cellar_fulltexts
+from cellar_extractor.eurlex_scraping import normalize_celex
 from cellar_extractor.operative_extractions import FetchOperativePart
 from cellar_extractor.operative_extractions import Writing
 import logging
