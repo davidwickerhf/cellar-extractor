@@ -6,6 +6,7 @@
    at the metadata assembly point, in both the celex- and ecli-keyed loops.
 """
 
+import cellar_extractor as cell
 import cellar_extractor.cellar_queries as cq
 import cellar_extractor.eurlex_scraping as es
 
@@ -132,3 +133,36 @@ def test_items_for_celex_unions_across_all_works(monkeypatch):
     assert len(uris) == 2
     langs = sorted(c["language"] for c in cands)
     assert langs == ["DE", "EN", "FR", "NL"]  # union, DE deduped
+
+
+def test_public_manifestation_and_fulltext_api(monkeypatch):
+    manifestations = [
+        {"item_url": "u_en", "format": "xhtml", "language": "EN"},
+        {"item_url": "u_fr", "format": "xhtml", "language": "FR"},
+    ]
+    monkeypatch.setattr(
+        es,
+        "_fetch_sector8_items_for_celex",
+        lambda celex, sector="8": ([f"http://cellar/{sector}/{celex}"], manifestations),
+    )
+
+    works, found = cell.get_cellar_manifestations_by_celex(
+        "62024CJ0001_SUM;62024CJ0001", sector="6"
+    )
+    assert works == ["http://cellar/6/62024CJ0001"]
+    assert found == manifestations
+    assert cell.normalize_celex("62024CJ0001_SUM;62024CJ0001") == "62024CJ0001"
+
+    monkeypatch.setattr(
+        es,
+        "_fanout_fulltexts_from_candidates",
+        lambda candidates, source_label: [
+            {"text_language": candidate["language"], "text_source": source_label}
+            for candidate in candidates
+        ],
+    )
+    rows = cell.extract_cellar_fulltexts(found, source_label="CELLAR_ITEM")
+    assert rows == [
+        {"text_language": "EN", "text_source": "CELLAR_ITEM"},
+        {"text_language": "FR", "text_source": "CELLAR_ITEM"},
+    ]

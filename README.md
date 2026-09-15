@@ -92,6 +92,11 @@ df = cell.get_cellar(
 
 Returns a dataframe with base metadata such as CELEX, ECLI, type, dates, and subject-matter-related fields.
 
+For direct manifestation access, use
+`get_cellar_manifestations_by_celex()`. It canonicalizes composite and
+`_SUM`/`_RES`/`_INF` identifiers to the base work before querying, preventing
+derived summaries or notices from being returned as judgment full text.
+
 You can also save explicitly to a custom path instead of the default `data/` location:
 
 ```python
@@ -116,6 +121,20 @@ extra_df, fulltext = cell.get_cellar_extra(
     max_ecli=100,
     threads=4,
 )
+```
+
+For targeted CELEX repair or supplementation, use the public CELLAR
+manifestation API. It unions every CELLAR work sharing the CELEX before choosing
+the best downloadable item per language:
+
+```python
+import cellar_extractor as cell
+
+_, manifestations = cell.get_cellar_manifestations_by_celex(
+    "62020CJ0414", sector="6"
+)
+english = [m for m in manifestations if m["language"] == "EN"]
+fulltexts = cell.extract_cellar_fulltexts(english)
 ```
 
 Returns:
@@ -268,6 +287,8 @@ Imported from [`cellar_extractor/__init__.py`](/Users/davidwickerhf/Projects/wor
 | `get_cellar(...)` | Fetch base CELLAR metadata (case law only) |
 | `get_cellar_extra(...)` | Fetch enriched metadata + full text (case law only) |
 | `get_legislation_by_celex_id(celex, language="EN")` | Fetch sector 3 / sector 0 legislation XHTML by CELEX |
+| `get_cellar_manifestations_by_celex(celex, sector="8")` | Resolve every CELLAR work for a CELEX and return their deduplicated manifestation union |
+| `extract_cellar_fulltexts(manifestations, source_label="CELLAR_ITEM")` | Download the best manifestation per language as fulltext records |
 | `get_nodes_and_edges_lists(df, only_local=False)` | Build citation graph lists |
 | `filter_subject_matter(df, phrase)` | Filter dataframe by subject phrase |
 | `FetchOperativePart` | Extract operative part from a single case document |
