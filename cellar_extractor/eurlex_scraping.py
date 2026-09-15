@@ -413,6 +413,22 @@ def _fetch_sector8_items_for_celex(celex, sector="8"):
     return work_uris, candidates
 
 
+def get_cellar_manifestations_by_celex(celex, sector="8"):
+    """Return all CELLAR works and manifestation candidates for a CELEX.
+
+    A CELEX can resolve to multiple CELLAR works with different language
+    coverage.  This public entry point deliberately returns the union across
+    every matching work so callers do not need to depend on the extractor's
+    private sector-8 helpers.
+
+    The return value is ``(work_uris, manifestations)``.  Each manifestation
+    contains ``item_url``, ``format``, and ``language`` keys and is deduplicated
+    on that triple.  ``sector`` defaults to ``"8"`` and may be set to ``"6"``
+    for CJEU documents.
+    """
+    return _fetch_sector8_items_for_celex(celex, sector=sector)
+
+
 def _fetch_sector8_work_uri(celex, sector="8"):
     """Resolve a CELEX to its CELLAR work URI.
 
@@ -551,6 +567,17 @@ def _fanout_fulltexts_from_candidates(candidates, source_label):
             }
         )
     return out
+
+
+def extract_cellar_fulltexts(manifestations, source_label="CELLAR_ITEM"):
+    """Download the best manifestation per language as fulltext records.
+
+    ``manifestations`` is the candidate list returned by
+    :func:`get_cellar_manifestations_by_celex`.  Empty bodies are omitted and
+    each returned dictionary contains ``text``, ``html``, ``text_source``,
+    ``text_language``, and ``text_format``.
+    """
+    return _fanout_fulltexts_from_candidates(manifestations, source_label)
 
 
 def _get_case_data_sector8(celex, language="EN"):
