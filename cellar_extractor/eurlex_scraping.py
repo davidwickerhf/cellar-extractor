@@ -92,7 +92,9 @@ LINK_SUMMARY = (
     "https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=CELEX:cIdHere_SUM&from=EN"
 )
 prog = re.compile(r"^[1234567890CE]\d{4}[A-Z]{1,2}\d{3,4}\d*")
-celex_case_pattern = re.compile(r"^6(?P<year>\d{4})(?P<kind>[A-Z]{1,2})(?P<num>\d{1,4})")
+celex_case_pattern = re.compile(
+    r"^6(?P<year>\d{4})(?P<kind>[A-Z]{1,2})(?P<num>\d{1,4})"
+)
 """
 Method for detecting code-words for case law directory codes for cellar.
 """
@@ -126,6 +128,7 @@ def _normalize_celex(celex):
         value = non_inf[0] if non_inf else options[0]
     if "_" in value:
         value = value.split("_")[0]
+    value = re.sub(r"\.(\d{2})$", r"(\1)", value)
     return value
 
 
@@ -321,7 +324,9 @@ def _choose_best_per_language(candidates, summary=False):
     rather than discarded — some manifestations lack
     ``expression_uses_language`` in CELLAR.
     """
-    format_order = SECTOR8_SUMMARY_FORMAT_ORDER if summary else SECTOR8_MAIN_FORMAT_ORDER
+    format_order = (
+        SECTOR8_SUMMARY_FORMAT_ORDER if summary else SECTOR8_MAIN_FORMAT_ORDER
+    )
     filtered = [c for c in candidates if c.get("format") in format_order]
     if not filtered:
         return []
@@ -345,7 +350,9 @@ def _choose_best_sector8_item(candidates, language="EN", summary=False):
     if len(candidates) == 0:
         return None
 
-    format_order = SECTOR8_SUMMARY_FORMAT_ORDER if summary else SECTOR8_MAIN_FORMAT_ORDER
+    format_order = (
+        SECTOR8_SUMMARY_FORMAT_ORDER if summary else SECTOR8_MAIN_FORMAT_ORDER
+    )
     filtered = [
         candidate for candidate in candidates if candidate.get("format") in format_order
     ]
@@ -814,7 +821,7 @@ def _collect_affecting_ids(content):
     return ids
 
 
-def _choose_best_document(doc_hits, language="EN"):
+def _choose_best_document(doc_hits, language="EN", celex=None):
     candidates = []
     for hit in doc_hits or []:
         content = hit.get("content", {}) if isinstance(hit, dict) else {}
@@ -826,6 +833,23 @@ def _choose_best_document(doc_hits, language="EN"):
         candidates.append(content)
     if len(candidates) == 0:
         return None
+
+    normalized_target = _normalize_celex(celex) if celex else ""
+    if normalized_target:
+        candidates_with_celex = [
+            doc for doc in candidates if _normalize_celex(doc.get("celex", ""))
+        ]
+        exact_candidates = [
+            doc
+            for doc in candidates_with_celex
+            if _normalize_celex(doc.get("celex", "")) == normalized_target
+        ]
+        if exact_candidates:
+            candidates = exact_candidates
+        elif candidates_with_celex:
+            # Selecting a judgment merely because it is the highest-ranked
+            # document can attach a sibling judgment to an order CELEX.
+            return None
 
     type_priority = {
         "ARRET": 0,
@@ -940,7 +964,9 @@ def _get_case_data_sector6_cellar_fallback(celex, language="EN"):
     if not work_uris:
         return None
 
-    fulltexts = _fanout_fulltexts_from_candidates(candidates, source_label="CELLAR_ITEM")
+    fulltexts = _fanout_fulltexts_from_candidates(
+        candidates, source_label="CELLAR_ITEM"
+    )
     if not fulltexts:
         return None
 
@@ -1028,7 +1054,11 @@ def _get_case_data_sector6(celex, language="EN"):
         if isinstance(root_hit, dict)
         else []
     )
-    selected_doc = _choose_best_document(documents, language=language)
+    selected_doc = _choose_best_document(
+        documents,
+        language=language,
+        celex=normalized,
+    )
     if selected_doc is None:
         return _get_case_data_sector6_cellar_fallback(normalized, language=language)
 
@@ -1084,18 +1114,41 @@ def _get_case_data_sector6(celex, language="EN"):
     else:
         summary_source = ""
 
-    # Multi-language fanout: InfoCuria's `documents.searchHits` already
-    # carries every docLang variant of the procedure. Fetch each blob the
-    # same way the primary one was fetched and build a fulltexts list.
+    # Multi-language fanout must remain within the selected logical document.
+    # A procedure can contain judgments, orders, opinions, and notices. The
+    # selected document's groupByLogicalId list is the authoritative language
+    # family; older responses without that field fall back to documents with
+    # the same logicDocId.
     fulltexts: list = []
     seen_langs: set = set()
     session = _get_http_session()
-    for doc in documents or []:
-        if not isinstance(doc, dict):
-            continue
-        content = doc.get("content", {}) if isinstance(doc, dict) else {}
-        if not isinstance(content, dict):
-            continue
+    selected_logic_id = str(selected_doc.get("logicDocId", ""))
+    selected_group = selected_doc.get("groupByLogicalId") or []
+    variant_contents = []
+    if isinstance(selected_group, list) and selected_group:
+        for variant in selected_group:
+            if not isinstance(variant, dict):
+                continue
+            variant_contents.append(
+                {
+                    "docLang": variant.get("docLang"),
+                    "docFormats": variant.get("formats") or [],
+                    "logicDocId": selected_logic_id,
+                    "idProcedure": variant.get("idProcedure")
+                    or selected_doc.get("idProcedure"),
+                }
+            )
+    else:
+        for doc in documents or []:
+            content = doc.get("content", {}) if isinstance(doc, dict) else {}
+            if not isinstance(content, dict):
+                continue
+            if str(content.get("logicDocId", "")) == selected_logic_id:
+                variant_contents.append(content)
+    if not variant_contents:
+        variant_contents = [selected_doc]
+
+    for content in variant_contents:
         variant_lang = content.get("docLang") or ""
         variant_lang_upper = str(variant_lang).upper()
         if variant_lang_upper == "" or variant_lang_upper in seen_langs:
