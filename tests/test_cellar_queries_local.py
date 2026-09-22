@@ -283,6 +283,7 @@ def test_infocuria_catalog_paginates_and_normalizes_document_variants(monkeypatc
 
     assert set(result) == {"ECLI:EU:F:2011:62", "ECLI:EU:C:2011:2"}
     assert result["ECLI:EU:F:2011:62"]["resource_legal_id_celex"] == ["62011FO0005(01)"]
+    assert result["ECLI:EU:F:2011:62"]["metadata_catalog_source"] == ["infocuria"]
     assert result["ECLI:EU:C:2011:2"]["resource_legal_type"] == ["CO"]
     assert calls[0][1]["pagination"]["from"] == 1
     assert calls[1][1]["pagination"]["from"] == 3

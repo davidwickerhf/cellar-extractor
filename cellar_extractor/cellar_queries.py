@@ -267,6 +267,7 @@ def _infocuria_metadata_from_hit(hit):
         "resource_legal_id_celex": [celex],
         "work_date_document": [document_date],
         "resource_legal_id_sector": [celex[0]],
+        "metadata_catalog_source": ["infocuria"],
     }
     if resource_type:
         metadata["resource_legal_type"] = [resource_type]
